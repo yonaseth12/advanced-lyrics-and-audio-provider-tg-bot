@@ -2,3 +2,5 @@ python-telegram-bot==21.10
 requests==2.32.3
 python-dotenv==1.0.1
 lyricsgenius==3.2.0
+google-api-python-client==2.162.0
+pytube==15.0.0
