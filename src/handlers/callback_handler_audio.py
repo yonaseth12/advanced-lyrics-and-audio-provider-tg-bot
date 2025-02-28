@@ -1,5 +1,5 @@
 import googleapiclient.discovery
-import pytube
+import pytubefix as pytube
 import os
 import config
 from utils.audio_uploader import upload_audio_to_user
