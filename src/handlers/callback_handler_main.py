@@ -2,7 +2,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import config
 import lyricsgenius
 import json
-from utils import parser_4096
+from utils.parser_4096 import parser_4096
 
 
 async def callback_handler_main(update, context):
