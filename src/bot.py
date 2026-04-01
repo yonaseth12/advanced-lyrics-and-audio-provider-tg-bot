@@ -6,12 +6,18 @@ from handlers.message_handlers import handle_message, callback_handler_page
 from handlers.callback_handler_audio import callback_handler_audio
 from handlers.callback_handler_main import callback_handler_main
 import config
+from database import init_db
 
 logging.basicConfig(
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+
+
+async def post_init(application):
+    await init_db()
+    logger.info("Bot started — polling for updates")
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -19,7 +25,16 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 if __name__ == "__main__":
-    app=Application.builder().token(config.TELEGRAM_BOT_TOKEN).read_timeout(60).build()
+    config.validate_env()
+
+    app = (
+        Application.builder()
+        .token(config.TELEGRAM_BOT_TOKEN)
+        .read_timeout(60)
+        .post_init(post_init)
+        .build()
+    )
+
     app.add_error_handler(error_handler)
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("lyrics", lyrics_command))

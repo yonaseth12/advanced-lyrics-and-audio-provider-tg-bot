@@ -1,8 +1,12 @@
 import os
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def remove_file_from_server(file_path, basename):
     if os.path.exists(file_path):
         os.remove(file_path)
-        print(f"{basename} has been removed from storage successfully!")
+        logger.info("Removed %s from storage", basename)
     else:
-        print(f"{basename} does not exist in the storage.")
+        logger.warning("File %s not found in storage (already removed?)", basename)

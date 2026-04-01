@@ -7,6 +7,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/ ./src/
 
-RUN mkdir -p src/file_store
+RUN mkdir -p src/file_store data
+
+VOLUME ["/app/data"]
 
 CMD ["python", "src/bot.py"]

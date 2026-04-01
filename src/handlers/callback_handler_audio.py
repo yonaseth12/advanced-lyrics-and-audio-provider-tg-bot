@@ -1,60 +1,73 @@
+import logging
+import os
 import googleapiclient.discovery
 import pytubefix as pytube
-import os
 import config
 from utils.audio_uploader import upload_audio_to_user
 from utils.file_remover_from_server import remove_file_from_server
 from utils.pytube_downloader import download_with_pytube
 
+logger = logging.getLogger(__name__)
+
 
 async def callback_handler_audio(update, context):
 	await update.callback_query.answer()
-	song_title=update.callback_query.data
-	if song_title=="AUDIOCONTENT:NO":
+	song_title = update.callback_query.data
+	user = update.effective_user
+	msg = update.callback_query.message
+
+	if song_title == "AUDIOCONTENT:NO":
+		logger.info("user=%s action=audio_declined", user.id)
 		await update.callback_query.delete_message()
-		return "User chose no audio content."
-	else:
-		song_title=song_title.split(" ", maxsplit=1)[1]
-		try:
-			youtube_api=googleapiclient.discovery.build(serviceName="youtube", version="v3", developerKey=config.GOOGLE_YOUTUBE_API_KEY)
-			yt_search_result=youtube_api.search().list(q=song_title, type="video", part="id, snippet", maxResults=12).execute()
-		except:
-			await update.message.reply_text("Can't access the server currently. Server is at full capacity. Try again later! :(")
-			return "Interrupted"		#Return is used to avoid execution of the rest if youtube search fails
-		result_list=[]
-		for item in yt_search_result["items"]:
-			if item["id"]["kind"] == "youtube#video" and item["snippet"]["liveBroadcastContent"] == "none" and len(result_list) < 4:
-				videoId=item["id"]["videoId"]
-				videoURL=f"https://www.youtube.com/watch?v={videoId}"
-				video_title = item["snippet"]["title"]
-				result_list.append(videoURL)
+		return
 
-		if result_list:					#if result_list is not empty
-			video_url=result_list[0]
-			pytubeObject = pytube.YouTube(video_url, use_oauth=False, allow_oauth_cache=True)
-			video_file_title = pytubeObject.title
-			pytubeObject=pytubeObject.streams.last()
+	song_title = context.user_data.get("audio_search_title", "")
+	if not song_title:
+		logger.warning("user=%s action=audio_requested no_title_in_session", user.id)
+		await msg.reply_text("Session expired. Please search for the song again.")
+		return
+	logger.info("user=%s action=audio_requested query=%r", user.id, song_title)
 
-			#Downloading
-			file_store=os.path.normpath("file_store/")
-			download_result = await download_with_pytube(update, file_store, pytubeObject, video_file_title)
-			if download_result == "Interrupted":
-				return "Interrupted"
-			else:
-				download_path = download_result
+	try:
+		youtube_api = googleapiclient.discovery.build(
+			serviceName="youtube", version="v3", developerKey=config.GOOGLE_YOUTUBE_API_KEY,
+		)
+		yt_search_result = youtube_api.search().list(
+			q=song_title, type="video", part="id, snippet", maxResults=12,
+		).execute()
+	except Exception as exc:
+		logger.error("user=%s youtube_search_failed error=%s", user.id, exc)
+		await msg.reply_text("Can't access the server currently. Server is at full capacity. Try again later! :(")
+		return
 
-			#Extracting the Basename
-			basename=os.path.basename(download_path)
+	result_list = []
+	for item in yt_search_result["items"]:
+		if (item["id"]["kind"] == "youtube#video"
+				and item["snippet"]["liveBroadcastContent"] == "none"
+				and len(result_list) < 4):
+			video_id = item["id"]["videoId"]
+			result_list.append(f"https://www.youtube.com/watch?v={video_id}")
 
-			#Uploading
-			await upload_audio_to_user(download_path, update)
-			
-			print(f"Successfully uploaded to user {update.callback_query.from_user.first_name}")
-			#Remove Inline Keyboard after successful update
-			await update.callback_query.delete_message()
+	if not result_list:
+		logger.warning("user=%s query=%r youtube_no_results", user.id, song_title)
+		await msg.reply_text("No content has been found. Try a different search.")
+		return
 
-			#Removing file from Server
-			remove_file_from_server(download_path, basename)
-			
-		else:
-			await update.message.reply_text("No content have been found inside our database.")
+	video_url = result_list[0]
+	logger.info("user=%s video_url=%s", user.id, video_url)
+	pytube_obj = pytube.YouTube(video_url, use_oauth=False, allow_oauth_cache=True)
+	video_file_title = pytube_obj.title
+	stream = pytube_obj.streams.last()
+
+	file_store = os.path.normpath("file_store/")
+	download_result = await download_with_pytube(update, file_store, stream, video_file_title)
+	if download_result == "Interrupted":
+		return
+
+	download_path = download_result
+	basename = os.path.basename(download_path)
+
+	await upload_audio_to_user(download_path, update)
+	logger.info("user=%s action=audio_sent file=%s", user.id, basename)
+	await update.callback_query.delete_message()
+	remove_file_from_server(download_path, basename)

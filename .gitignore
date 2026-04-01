@@ -10,6 +10,7 @@ venv/
 .venv/
 
 file_store/
+data/
 
 *.egg-info/
 dist/
