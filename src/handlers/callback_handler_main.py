@@ -37,6 +37,7 @@ async def callback_handler_main(update, context):
 			await update.callback_query.message.reply_text(block)
 
 		context.user_data["audio_search_title"] = lyrics_string_container["full_title"]
+		context.user_data["genius_song_id"] = int(song_id)
 		get_audio_button = InlineKeyboardButton("Get Audio", callback_data="AUDIOCONTENT:YES")
 		no_button = InlineKeyboardButton("No", callback_data="AUDIOCONTENT:NO")
 		await update.callback_query.message.reply_text(

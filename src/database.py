@@ -30,6 +30,13 @@ CREATE TABLE IF NOT EXISTS search_history (
 
 CREATE INDEX IF NOT EXISTS idx_search_user ON search_history(telegram_user_id);
 CREATE INDEX IF NOT EXISTS idx_search_date ON search_history(created_at);
+
+CREATE TABLE IF NOT EXISTS audio_cache (
+    genius_song_id   INTEGER PRIMARY KEY,
+    song_title       TEXT NOT NULL,
+    telegram_file_id TEXT NOT NULL,
+    created_at       TEXT NOT NULL
+);
 """
 
 
@@ -61,6 +68,41 @@ async def upsert_user(user) -> None:
             await db.commit()
     except Exception:
         logger.exception("Failed to upsert user %s", user.id)
+
+
+async def get_cached_audio(genius_song_id: int) -> str | None:
+    """Return the Telegram file_id for a song, or None if not cached."""
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            cursor = await db.execute(
+                "SELECT telegram_file_id FROM audio_cache WHERE genius_song_id = ?",
+                (genius_song_id,),
+            )
+            row = await cursor.fetchone()
+            return row[0] if row else None
+    except Exception:
+        logger.exception("Failed to read audio cache for song %s", genius_song_id)
+        return None
+
+
+async def cache_audio(genius_song_id: int, song_title: str, telegram_file_id: str) -> None:
+    """Store a Telegram file_id for a Genius song."""
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                """
+                INSERT INTO audio_cache (genius_song_id, song_title, telegram_file_id, created_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(genius_song_id) DO UPDATE SET
+                    telegram_file_id = excluded.telegram_file_id,
+                    created_at       = excluded.created_at
+                """,
+                (genius_song_id, song_title, telegram_file_id, now),
+            )
+            await db.commit()
+    except Exception:
+        logger.exception("Failed to cache audio for song %s", genius_song_id)
 
 
 async def log_search(telegram_user_id: int, query: str, result_count: int | None,
