@@ -1,14 +1,21 @@
+from requests.exceptions import HTTPError
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import config
 import lyricsgenius
 import json
 from utils.parser_4096 import parser_4096
+from utils.genius_errors import genius_error_user_message
 
 
 async def callback_handler_main(update, context):
 	await update.callback_query.answer()
 	song_id=update.callback_query.data
-	song_result=config.genius.search_song(song_id=song_id)			#Song object data here is found as Song object (.to_json() converts it to a string, then json.loads() converts it to json/dict)
+	try:
+		song_result=config.genius.search_song(song_id=song_id)			#Song object data here is found as Song object (.to_json() converts it to a string, then json.loads() converts it to json/dict)
+	except HTTPError as exc:
+		await update.callback_query.edit_message_text(genius_error_user_message(exc))
+		await update.callback_query.edit_message_reply_markup(InlineKeyboardMarkup([[]]))
+		return
 	
 	if type(song_result) is lyricsgenius.types.song.Song:
 		# print("Inside callback: type of song_result: ", type(song_result))
