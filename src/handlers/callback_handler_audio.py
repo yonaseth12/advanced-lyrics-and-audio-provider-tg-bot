@@ -4,7 +4,7 @@ import googleapiclient.discovery
 import pytubefix as pytube
 from telegram.error import BadRequest
 import config
-from database import get_cached_audio, cache_audio
+from database import get_cached_audio, cache_audio, get_audio_downloads_today, log_audio_download, DAILY_AUDIO_LIMIT
 from utils.audio_uploader import upload_audio_to_user
 from utils.file_remover_from_server import remove_file_from_server
 from utils.pytube_downloader import download_with_pytube
@@ -40,12 +40,23 @@ async def callback_handler_audio(update, context):
 		return
 	logger.info("user=%s action=audio_requested song_id=%s query=%r", user.id, genius_song_id, song_title)
 
+	# --- Rate limit check ---
+	downloads_today = await get_audio_downloads_today(user.id)
+	if downloads_today >= DAILY_AUDIO_LIMIT:
+		logger.info("user=%s action=audio_rate_limited count=%d", user.id, downloads_today)
+		await msg.reply_text(
+			f"You've reached your daily limit of {DAILY_AUDIO_LIMIT} audio downloads. "
+			"Try again tomorrow!"
+		)
+		return
+
 	# --- Check cache first ---
 	if genius_song_id is not None:
 		cached_file_id = await get_cached_audio(genius_song_id)
 		if cached_file_id:
 			logger.info("user=%s song_id=%s cache=hit", user.id, genius_song_id)
 			if await _try_send_cached(msg, cached_file_id):
+				await log_audio_download(user.id, genius_song_id, "cache")
 				await update.callback_query.delete_message()
 				return
 			logger.warning("user=%s song_id=%s cache=stale (file_id invalid), re-downloading", user.id, genius_song_id)
@@ -92,6 +103,7 @@ async def callback_handler_audio(update, context):
 
 	sent_message = await upload_audio_to_user(download_path, update)
 	logger.info("user=%s action=audio_sent file=%s", user.id, basename)
+	await log_audio_download(user.id, genius_song_id, "download")
 	await update.callback_query.delete_message()
 	remove_file_from_server(download_path, basename)
 

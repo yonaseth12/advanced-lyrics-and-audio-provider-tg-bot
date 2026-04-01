@@ -37,7 +37,20 @@ CREATE TABLE IF NOT EXISTS audio_cache (
     telegram_file_id TEXT NOT NULL,
     created_at       TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS audio_downloads (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_user_id INTEGER NOT NULL,
+    genius_song_id   INTEGER,
+    source           TEXT NOT NULL,  -- 'cache' or 'download'
+    created_at       TEXT NOT NULL,
+    FOREIGN KEY (telegram_user_id) REFERENCES users(telegram_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_downloads_user_date ON audio_downloads(telegram_user_id, created_at);
 """
+
+DAILY_AUDIO_LIMIT = int(os.getenv("DAILY_AUDIO_LIMIT", "5"))
 
 
 async def init_db():
@@ -103,6 +116,45 @@ async def cache_audio(genius_song_id: int, song_title: str, telegram_file_id: st
             await db.commit()
     except Exception:
         logger.exception("Failed to cache audio for song %s", genius_song_id)
+
+
+async def get_audio_downloads_today(telegram_user_id: int) -> int:
+    """Return how many audio downloads (non-cache) a user has made today (UTC)."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            cursor = await db.execute(
+                """
+                SELECT COUNT(*) FROM audio_downloads
+                WHERE telegram_user_id = ?
+                  AND source = 'download'
+                  AND created_at >= ?
+                """,
+                (telegram_user_id, today),
+            )
+            row = await cursor.fetchone()
+            return row[0] if row else 0
+    except Exception:
+        logger.exception("Failed to count audio downloads for user %s", telegram_user_id)
+        return 0
+
+
+async def log_audio_download(telegram_user_id: int, genius_song_id: int | None,
+                             source: str) -> None:
+    """Record an audio delivery (source = 'cache' or 'download')."""
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                """
+                INSERT INTO audio_downloads (telegram_user_id, genius_song_id, source, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (telegram_user_id, genius_song_id, source, now),
+            )
+            await db.commit()
+    except Exception:
+        logger.exception("Failed to log audio download for user %s", telegram_user_id)
 
 
 async def log_search(telegram_user_id: int, query: str, result_count: int | None,
